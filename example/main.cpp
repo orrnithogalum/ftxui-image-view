@@ -49,7 +49,7 @@ int main(int argc, char **argv)
         catDisplay,
         selectButton
     });
-    
+
     auto mainPannelRender = ftxui::Renderer(mainPannelContainer, [&]{
         return ftxui::vbox({
             catDisplay->Render() | ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 60),
