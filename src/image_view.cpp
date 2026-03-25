@@ -2,17 +2,20 @@
 // Use of this source code is governed by the MIT license that can be found in
 // the LICENSE file.
 
-#include <memory>     // for make_shared
-#include <string>     // for string, wstring
+#include <cstddef>
+#include <cstdint>
 #include <sstream>
 #include <fstream>
+#include <utility>
+#include <memory>     // for make_shared
+#include <string>     // for string, wstring
 
-#include "ftxui/dom/elements.hpp"     // for Element, text, vtext
 #include "ftxui/dom/requirement.hpp"  // for Requirement
 #include "ftxui/screen/screen.hpp"    // for Pixel, Screen
+#include "ftxui/dom/elements.hpp"     // for Element, text, vtext
 #include "ftxui/dom/node.hpp"         // for Node
 
-#include "../libs/tiv_lib.h"
+#include "tiv_lib.h"
 
 namespace ftxui {
 
@@ -20,16 +23,46 @@ namespace {
 
 using ftxui::Screen;
 
-class ImageView: public Node {
-private:
-    inline static std::unordered_map<std::string, cimg_library::CImg<unsigned char>> cache_;
+using ResizeKey = std::tuple<int, int, int>;
+struct ResizeKeyHash {
+    std::size_t operator()(const ResizeKey& k) const {
+        auto const& [url, w, h] = k;
+        std::size_t h1 = std::hash<int>{}(url);
+        std::size_t h2 = std::hash<int>{}(w);
+        std::size_t h3 = std::hash<int>{}(h);
+        return h1 ^ (h2 << 1) ^ (h3 << 2);
+    }
+};
 
-    // Debug variables
+struct CharKey {
+    uint64_t value;
+
+    CharKey(uint32_t url, uint16_t x, uint16_t y) {
+        value = ((uint64_t)url << 32) | (x << 16) | y;
+    }
+
+    bool operator==(const CharKey& other) const {
+        return value == other.value;
+    }
+};
+struct CharKeyHash {
+    size_t operator()(const CharKey& k) const {
+        return std::hash<uint64_t>{}(k.value);
+    }
+};
+
+class ImageView: public Node {
+public:
+    inline static std::unordered_map<ResizeKey, cimg_library::CImg<unsigned char>, ResizeKeyHash> resized_cache_;
+    inline static std::unordered_map<std::string, cimg_library::CImg<unsigned char>> cimg_cache_;
+    inline static std::unordered_map<CharKey, tiv::CharData, CharKeyHash> char_cache_;
+
     inline static int compute_count_ = 0;
     inline static int render_count_ = 0;
     std::ofstream log_file_;
 
-public:
+    uint32_t url_hash_;
+
     explicit ImageView(std::string_view url) : url_(url) {
         log_file_.open("method_calls.log", std::ios::app);
 
@@ -38,61 +71,87 @@ public:
             create_file.close();
             log_file_.open("method_calls.log", std::ios::app);
         }
+
+        url_hash_ = std::hash<std::string>{}(url_);
     }
 
     void ComputeRequirement() override {
-        auto it = cache_.find(std::string(url_));
+        auto it = cimg_cache_.find(url_);
 
-        if (it != cache_.end()) {
-            img_ = it->second;
+        if (it != cimg_cache_.end()) {
+            img_ = &it->second;
         } else {
             ImageView::compute_count_++;
             log_file_ << "COMPUTE: " << ImageView::compute_count_ << std::endl;
 
             auto img = tiv::load_rgb_CImg(url_.c_str());
-            cache_[std::string(url_)] = img;
-            img_ = img;
+            auto [it, _] = cimg_cache_.emplace(url_, std::move(img));
+            img_ = &it->second;
         }
 
-        requirement_.min_x = img_.width() / 4;
-        requirement_.min_y = img_.height() / 8;
+        requirement_.min_x = img_->width() / 4;
+        requirement_.min_y = img_->height() / 8;
     }
 
     void Render(Screen& screen) override {
         ImageView::render_count_++;
         log_file_ << "RENDER: " << ImageView::render_count_ << std::endl;
 
-        auto get_pixel = [this](int row, int col) -> unsigned long {
-            return (((unsigned long) img_(row, col, 0, 0)) << 16)
-                | (((unsigned long) img_(row, col, 0, 1)) << 8)
-                | (((unsigned long) img_(row, col, 0, 2)));
-        };
-
         auto origin_image_width = (box_.x_max - box_.x_min + 1) * 4;
         auto origin_image_height = (box_.y_max - box_.y_min + 1) * 8;
 
-        auto new_size = tiv::size(img_).fitted_within(tiv::size(origin_image_width, origin_image_height));
-        img_.resize(new_size.width, new_size.height, -100, -100, 5);
+        auto& original = cimg_cache_.at(url_);
+        auto new_size = tiv::size(*img_).fitted_within(tiv::size(origin_image_width, origin_image_height));
 
-        auto flags = tiv::FLAG_24BIT;
+        ResizeKey key{url_hash_, new_size.width, new_size.height};
 
-        tiv::CharData lastCharData;
+        auto it = resized_cache_.find(key);
+        if (it != resized_cache_.end()) {
+            img_ = &it->second;
+        } else {
+            log_file_ << "RESIZE " << new_size.width << "x" << new_size.height << std::endl;
+
+            auto img = original.get_resize(
+                new_size.width, new_size.height, -100, -100, 5
+            );
+
+            it = resized_cache_.emplace(key, std::move(img)).first;
+            img_ = &it->second;
+        }
+
+        auto get_pixel = [this](int row, int col) -> unsigned long {
+            return (((unsigned long) (*img_)(row, col, 0, 0)) << 16)
+                | (((unsigned long) (*img_)(row, col, 0, 1)) << 8)
+                | (((unsigned long) (*img_)(row, col, 0, 2)));
+        };
+
         auto screen_y = box_.y_min;
 
-        for (int y = 0; y <= img_.height() - 8; y += 8) {
+        for (uint16_t y = 0; y <= img_->height() - 8; y += 8) {
             auto screen_x = box_.x_min;
 
-            for (int x = 0; x <= img_.width() - 4; x += 4) {
+            for (uint16_t x = 0; x <= img_->width() - 4; x += 4) {
                 if(screen_x > box_.x_max)
                     break;
 
+                CharKey key{url_hash_, x, y};
+                const tiv::CharData* charData;
+
+                auto cache_it = char_cache_.find(key);
+                if (cache_it != char_cache_.end()) {
+                    charData = &cache_it->second;
+                } else {
+                    auto [it, _] = char_cache_.emplace(key,
+                        tiv::findCharData(get_pixel, x, y, tiv::FLAG_24BIT));
+                    charData = &it->second;
+                }
+
                 std::stringstream output;
-                tiv::CharData charData = tiv::findCharData(get_pixel, x, y, tiv::FLAG_24BIT);
 
-                ftxui::Color bgColor(charData.bgColor[0], charData.bgColor[1],charData.bgColor[2]);
-                ftxui::Color fgColor(charData.fgColor[0], charData.fgColor[1],charData.fgColor[2]);
+                ftxui::Color bgColor(charData->bgColor[0], charData->bgColor[1],charData->bgColor[2]);
+                ftxui::Color fgColor(charData->fgColor[0], charData->fgColor[1],charData->fgColor[2]);
 
-                tiv::printCodepoint(output, charData.codePoint);
+                tiv::printCodepoint(output, charData->codePoint);
 
                 auto pixel = ftxui::Pixel();
 
@@ -108,13 +167,32 @@ public:
 
 private:
     std::string url_;
-    cimg_library::CImg<unsigned char> img_;
+    const cimg_library::CImg<unsigned char>* img_ = nullptr;
+    // cimg_library::CImg<unsigned char> img_;
 
-    int         width_;
-    int         height_;
+    int         width_ = 0;
+    int         height_ = 0;
 };
 
 }  // namespace
+
+void free_image_cache() {
+    // Force memory free
+    // {
+    //     std::unordered_map<ResizeKey, cimg_library::CImg<unsigned char>, ResizeKeyHash> empty;
+    //     ImageView::resized_cache_.swap(empty);
+    // }
+
+    // {
+    //     std::unordered_map<std::string, cimg_library::CImg<unsigned char>> empty;
+    //     ImageView::cimg_cache_.swap(empty);
+    // }
+
+    // {
+    //     std::unordered_map<CharKey, tiv::CharData, CharKeyHash> empty;
+    //     ImageView::char_cache_.swap(empty);
+    // }
+}
 
 Element image_view(std::string_view url) {
     return std::make_shared<ImageView>(url);

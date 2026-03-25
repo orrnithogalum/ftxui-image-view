@@ -3,3 +3,7 @@ build/
 
 # logs
 method_calls.log
+
+# profiling
+gmon.out
+report.txt
