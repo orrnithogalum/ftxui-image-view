@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <sstream>
-#include <fstream>
 #include <utility>
 #include <memory>     // for make_shared
 #include <string>     // for string, wstring
@@ -57,21 +56,9 @@ public:
     inline static std::unordered_map<std::string, cimg_library::CImg<unsigned char>> cimg_cache_;
     inline static std::unordered_map<CharKey, tiv::CharData, CharKeyHash> char_cache_;
 
-    inline static int compute_count_ = 0;
-    inline static int render_count_ = 0;
-    std::ofstream log_file_;
-
     uint32_t url_hash_;
 
     explicit ImageView(std::string_view url) : url_(url) {
-        log_file_.open("method_calls.log", std::ios::app);
-
-        if (!log_file_.is_open()) {
-            std::ofstream create_file("method_calls.log");
-            create_file.close();
-            log_file_.open("method_calls.log", std::ios::app);
-        }
-
         url_hash_ = std::hash<std::string>{}(url_);
     }
 
@@ -81,9 +68,6 @@ public:
         if (it != cimg_cache_.end()) {
             img_ = &it->second;
         } else {
-            ImageView::compute_count_++;
-            log_file_ << "COMPUTE: " << ImageView::compute_count_ << std::endl;
-
             auto img = tiv::load_rgb_CImg(url_.c_str());
             auto [it, _] = cimg_cache_.emplace(url_, std::move(img));
             img_ = &it->second;
@@ -94,9 +78,6 @@ public:
     }
 
     void Render(Screen& screen) override {
-        ImageView::render_count_++;
-        log_file_ << "RENDER: " << ImageView::render_count_ << std::endl;
-
         auto origin_image_width = (box_.x_max - box_.x_min + 1) * 4;
         auto origin_image_height = (box_.y_max - box_.y_min + 1) * 8;
 
@@ -109,8 +90,6 @@ public:
         if (it != resized_cache_.end()) {
             img_ = &it->second;
         } else {
-            log_file_ << "RESIZE " << new_size.width << "x" << new_size.height << std::endl;
-
             auto img = original.get_resize(
                 new_size.width, new_size.height, -100, -100, 5
             );
@@ -168,31 +147,12 @@ public:
 private:
     std::string url_;
     const cimg_library::CImg<unsigned char>* img_ = nullptr;
-    // cimg_library::CImg<unsigned char> img_;
 
     int         width_ = 0;
     int         height_ = 0;
 };
 
 }  // namespace
-
-void free_image_cache() {
-    // Force memory free
-    // {
-    //     std::unordered_map<ResizeKey, cimg_library::CImg<unsigned char>, ResizeKeyHash> empty;
-    //     ImageView::resized_cache_.swap(empty);
-    // }
-
-    // {
-    //     std::unordered_map<std::string, cimg_library::CImg<unsigned char>> empty;
-    //     ImageView::cimg_cache_.swap(empty);
-    // }
-
-    // {
-    //     std::unordered_map<CharKey, tiv::CharData, CharKeyHash> empty;
-    //     ImageView::char_cache_.swap(empty);
-    // }
-}
 
 Element image_view(std::string_view url) {
     return std::make_shared<ImageView>(url);

@@ -28,8 +28,8 @@ int main(int argc, char **argv)
             pictures.emplace_back(file.path().native());
         }
     }
-    auto cell = [](const std::string& path){ return ftxui::image_view(path) | ftxui::border | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 30) | ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, 30); };
 
+    auto cell = [](const std::string& path){ return ftxui::image_view(path) | ftxui::border | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 30) | ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, 30); };
 
     int displayIndexLeft{0};
     int displayIndexRight{1};
