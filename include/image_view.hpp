@@ -5,5 +5,6 @@
 namespace ftxui {
 
 Element image_view(std::string_view url);
+void setOnImageLoadedCallback(std::function<void()> cb);
 
 }

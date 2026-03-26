@@ -29,7 +29,7 @@ int main(int argc, char **argv)
         }
     }
 
-    auto cell = [](const std::string& path){ return ftxui::image_view(path) | ftxui::border | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 30) | ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, 30); };
+    auto cell = [](const std::string& path){ return ftxui::image_view(path); };
 
     int displayIndex{0};
     auto catDisplay = ftxui::Renderer([&]{
@@ -49,6 +49,10 @@ int main(int argc, char **argv)
     });
 
     auto screen = ftxui::ScreenInteractive::FitComponent();
+
+    ftxui::setOnImageLoadedCallback([&]() {
+        screen.PostEvent(ftxui::Event::Custom);
+    });
 
     auto mainPannelRender = ftxui::Renderer(mainPannelContainer, [&]{
         return ftxui::vbox({

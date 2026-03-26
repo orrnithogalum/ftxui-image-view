@@ -78,6 +78,7 @@ public:
     inline static std::mutex mutex_;
 
     inline static cimg_library::CImg<unsigned char> black_img = cimg_library::CImg<unsigned char>(1, 1, 1, 3, 0);
+    inline static std::function<void()> on_loaded_;
 
     uint32_t url_hash_;
 
@@ -112,6 +113,11 @@ public:
                         version_[url_copy]++;
 
                         inflight_[url_copy] = false;
+
+                        if(on_loaded_) {
+                            on_loaded_();
+                        }
+
                     }).detach();
                 }
             }
@@ -208,14 +214,19 @@ public:
     }
 
 private:
-    std::string url_;
     const cimg_library::CImg<unsigned char>* img_ = nullptr;
 
     int         width_ = 0;
     int         height_ = 0;
+
+    std::string url_;
 };
 
 }  // namespace
+
+void setOnImageLoadedCallback(std::function<void()> cb) {
+    ImageView::on_loaded_ = std::move(cb);
+}
 
 Element image_view(std::string_view url) {
     return std::make_shared<ImageView>(url);
