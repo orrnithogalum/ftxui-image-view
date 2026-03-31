@@ -16,7 +16,8 @@
 #include "ftxui/dom/elements.hpp"
 #include "ftxui/dom/node.hpp"
 
-#include "tiv_lib.h"
+#include "../libs/bounded_cache.hpp"
+#include "../libs/tiv_lib.h"
 
 namespace ftxui {
 
@@ -69,9 +70,13 @@ struct CharKeyHash {
 
 class ImageView: public Node {
 public:
-    inline static std::unordered_map<ResizeKey, cimg_library::CImg<unsigned char>, ResizeKeyHash> resized_cache_;
-    inline static std::unordered_map<std::string, cimg_library::CImg<unsigned char>> cimg_cache_;
-    inline static std::unordered_map<CharKey, tiv::CharData, CharKeyHash> char_cache_;
+    // inline static std::unordered_map<ResizeKey, cimg_library::CImg<unsigned char>, ResizeKeyHash> resized_cache_;
+    // inline static std::unordered_map<std::string, cimg_library::CImg<unsigned char>> cimg_cache_;
+    // inline static std::unordered_map<CharKey, tiv::CharData, CharKeyHash> char_cache_;
+    inline static BoundedCache<ResizeKey, cimg_library::CImg<unsigned char>, ResizeKeyHash> resized_cache_{100};
+    inline static BoundedCache<std::string, cimg_library::CImg<unsigned char>> cimg_cache_{50};
+    inline static BoundedCache<CharKey, tiv::CharData, CharKeyHash> char_cache_{10000};
+
     inline static std::unordered_map<std::string, int> version_;
 
     inline static std::unordered_map<std::string, bool> inflight_;
