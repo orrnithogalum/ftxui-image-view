@@ -70,9 +70,6 @@ struct CharKeyHash {
 
 class ImageView: public Node {
 public:
-    // inline static std::unordered_map<ResizeKey, cimg_library::CImg<unsigned char>, ResizeKeyHash> resized_cache_;
-    // inline static std::unordered_map<std::string, cimg_library::CImg<unsigned char>> cimg_cache_;
-    // inline static std::unordered_map<CharKey, tiv::CharData, CharKeyHash> char_cache_;
     inline static BoundedCache<ResizeKey, cimg_library::CImg<unsigned char>, ResizeKeyHash> resized_cache_{100};
     inline static BoundedCache<std::string, cimg_library::CImg<unsigned char>> cimg_cache_{50};
     inline static BoundedCache<CharKey, tiv::CharData, CharKeyHash> char_cache_{10000};
@@ -236,6 +233,21 @@ private:
 
 void setOnImageLoadedCallback(std::function<void()> cb) {
     ImageView::on_loaded_ = std::move(cb);
+}
+
+void setImageCacheMaxSize(uint16_t size) {
+    std::lock_guard<std::mutex> lock(ImageView::mutex_);
+    ImageView::cimg_cache_.setMaxSize(size);
+}
+
+void setImageResizeCacheMaxSize(uint16_t size) {
+    std::lock_guard<std::mutex> lock(ImageView::mutex_);
+    ImageView::resized_cache_.setMaxSize(size);
+}
+
+void setImageCharCacheMaxSize(uint16_t size) {
+    std::lock_guard<std::mutex> lock(ImageView::mutex_);
+    ImageView::char_cache_.setMaxSize(size);
 }
 
 Element image_view(std::string_view url) {

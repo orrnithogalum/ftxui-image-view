@@ -56,6 +56,11 @@ public:
 
     size_t size() const { return map_.size(); }
 
+    void setMaxSize(size_t new_size) {
+        max_size_ = new_size;
+        evict_if_needed();
+    }
+
 private:
     using Clock = std::chrono::steady_clock;
 
